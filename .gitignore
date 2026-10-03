@@ -1,0 +1,8 @@
+# Downloaded ffmpeg binary (large; re-download via tools setup instead of versioning)
+/tools/
+
+# Recorded CCTV footage (large binary video data, not source)
+/recordings/
+
+# Misc
+*.log
