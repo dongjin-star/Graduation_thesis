@@ -21,6 +21,15 @@
 .PARAMETER FixCrf
     CRF passed to Fix-Recording.ps1 for the automatic fixed copy. Default 18
 
+.PARAMETER MinFreeMemoryGB
+    Minimum free RAM (GB) required to start recording. If free memory is
+    below this, the script aborts before even connecting to the stream
+    (a long recording getting OOM-killed partway through is how footage was
+    lost before). Default 3. Use -Force to start anyway.
+
+.PARAMETER Force
+    Start the recording even if the free-memory check fails.
+
 .EXAMPLE
     .\Record-CCTV.ps1 -Url "https://.../playlist.m3u8"
     .\Record-CCTV.ps1 -Url "https://.../playlist.m3u8" -Duration 3600
@@ -44,10 +53,35 @@ param(
 
     [int]$FixFps = 30,
 
-    [int]$FixCrf = 18
+    [int]$FixCrf = 18,
+
+    [double]$MinFreeMemoryGB = 3,
+
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+
+# Pre-flight memory check. A long unattended recording getting OOM-killed
+# mid-way produces an unplayable/unrecoverable file (see mkv rationale
+# below), so check for headroom before even starting.
+$os = Get-CimInstance Win32_OperatingSystem
+$totalGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+$freeGB = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
+Write-Host ("Free memory: {0}GB / {1}GB total" -f $freeGB, $totalGB)
+
+if ($freeGB -lt $MinFreeMemoryGB) {
+    Write-Host ""
+    Write-Host "Top memory-consuming processes:"
+    Get-Process | Sort-Object WorkingSet -Descending | Select-Object -First 8 Name, @{N='MemMB';E={[math]::Round($_.WorkingSet/1MB,0)}} | Format-Table -AutoSize | Out-String | Write-Host
+
+    if (-not $Force) {
+        Write-Error "Free memory (${freeGB}GB) is below the ${MinFreeMemoryGB}GB minimum. Close some of the programs above, or pass -Force to start anyway."
+        exit 1
+    } else {
+        Write-Warning "Free memory (${freeGB}GB) is below the ${MinFreeMemoryGB}GB minimum, but -Force was set. Continuing anyway."
+    }
+}
 
 # Resolve ffmpeg executable.
 # NOTE: the system ffmpeg (gyan.dev build) uses gnutls for TLS, which cannot
